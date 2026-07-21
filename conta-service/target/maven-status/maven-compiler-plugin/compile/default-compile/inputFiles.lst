@@ -1,0 +1,14 @@
+/app/src/main/java/com/demo/conta/ContaApplication.java
+/app/src/main/java/com/demo/conta/controller/ClienteController.java
+/app/src/main/java/com/demo/conta/controller/ContaController.java
+/app/src/main/java/com/demo/conta/dto/ClienteResponse.java
+/app/src/main/java/com/demo/conta/dto/ContaResumo.java
+/app/src/main/java/com/demo/conta/entity/Cliente.java
+/app/src/main/java/com/demo/conta/entity/Conta.java
+/app/src/main/java/com/demo/conta/mapper/ClienteMapper.java
+/app/src/main/java/com/demo/conta/mapper/ContaMapper.java
+/app/src/main/java/com/demo/conta/repository/ClienteRepository.java
+/app/src/main/java/com/demo/conta/repository/ContaRepository.java
+/app/src/main/java/com/demo/conta/service/ClienteService.java
+/app/src/main/java/com/demo/conta/service/ContaService.java
+/app/src/main/java/com/demo/conta/service/CrudService.java

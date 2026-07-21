@@ -1,0 +1,7 @@
+/app/src/test/java/com/demo/saldo/client/ContaClientTest.java
+/app/src/test/java/com/demo/saldo/consumer/TransacaoConsumerTest.java
+/app/src/test/java/com/demo/saldo/controller/TransacaoControllerTest.java
+/app/src/test/java/com/demo/saldo/mapper/TransacaoMapperTest.java
+/app/src/test/java/com/demo/saldo/service/SaldoDiarioServiceTest.java
+/app/src/test/java/com/demo/saldo/service/SaldoServiceTest.java
+/app/src/test/java/com/demo/saldo/service/TransacaoServiceTest.java

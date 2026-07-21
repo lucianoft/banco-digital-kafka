@@ -1,0 +1,26 @@
+package com.demo.saldo.config;
+
+import org.apache.kafka.common.TopicPartition;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
+import org.springframework.kafka.listener.DefaultErrorHandler;
+import org.springframework.util.backoff.FixedBackOff;
+
+@Configuration
+public class KafkaConsumerConfig {
+
+    /**
+     * Rejeição de negócio (conta inválida, saldo insuficiente) é tratada dentro do
+     * TransacaoConsumer e nunca chega aqui — o que sobra pra esse handler são erros
+     * técnicos (desserialização, banco fora do ar): 2 retries no próprio container
+     * e depois vai pra "<tópico-original>-dlq".
+     */
+    @Bean
+    public DefaultErrorHandler errorHandler(KafkaTemplate<String, Object> kafkaTemplate) {
+        DeadLetterPublishingRecoverer recoverer = new DeadLetterPublishingRecoverer(kafkaTemplate,
+                (record, ex) -> new TopicPartition(record.topic() + "-dlq", record.partition()));
+        return new DefaultErrorHandler(recoverer, new FixedBackOff(1000L, 2L));
+    }
+}

@@ -1,0 +1,50 @@
+spring:
+  application:
+    name: pix-service
+
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:5432/pix
+    username: ${DB_USER:postgres}
+    password: ${DB_PASSWORD:postgres}
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: pix-service-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
+        spring.json.trusted.packages: com.demo.pix.event
+        spring.json.value.default.type: com.demo.pix.event.TransacaoProcessadaEvent
+        # o ledger-service publica com o __TypeId__ apontando pro record dele
+        # (com.demo.saldo.event...), que não existe aqui — ignora o header e usa
+        # sempre o default.type acima
+        spring.json.use.type.headers: false
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+
+server:
+  port: 8081
+
+app:
+  kafka:
+    topic-transacoes: transacoes
+    topic-transacoes-processadas: transacoes-processadas
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+logging:
+  level:
+    com.demo.pix: INFO

@@ -1,0 +1,56 @@
+spring:
+  application:
+    name: ledger-service
+
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:5432/kafka_saldo
+    username: ${DB_USER:postgres}
+    password: ${DB_PASSWORD:postgres}
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: ledger-service-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
+        spring.json.trusted.packages: com.demo.saldo.event
+        spring.json.value.default.type: com.demo.saldo.event.TransacaoEvent
+        # o produtor pode ser o pix-service (pacote com.demo.pix.event, classe diferente
+        # da nossa) — ignora o header __TypeId__ e usa sempre o default.type acima
+        spring.json.use.type.headers: false
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+
+server:
+  port: 8080
+
+app:
+  kafka:
+    topic-transacoes: transacoes
+    topic-transacoes-processadas: transacoes-processadas
+  conta-service:
+    base-url: ${CONTA_SERVICE_BASE_URL:http://localhost:8082}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+logging:
+  level:
+    com.demo.saldo: INFO

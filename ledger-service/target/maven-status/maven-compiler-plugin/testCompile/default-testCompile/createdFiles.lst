@@ -1,0 +1,7 @@
+com/demo/saldo/controller/TransacaoControllerTest.class
+com/demo/saldo/service/TransacaoServiceTest.class
+com/demo/saldo/service/SaldoServiceTest.class
+com/demo/saldo/service/SaldoDiarioServiceTest.class
+com/demo/saldo/consumer/TransacaoConsumerTest.class
+com/demo/saldo/client/ContaClientTest.class
+com/demo/saldo/mapper/TransacaoMapperTest.class
