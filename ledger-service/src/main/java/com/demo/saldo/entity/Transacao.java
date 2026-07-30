@@ -16,7 +16,7 @@ import java.time.LocalDateTime;
 
 /**
  * Ledger só de movimentos efetivados — se a linha existe, o saldo já foi alterado.
- * conta_id é só um identificador externo: a conta em si vive no conta-service.
+ * conta_id é só um identificador externo: a conta em si vive no account-service.
  */
 @Getter
 @Setter

@@ -23,7 +23,7 @@ class ContaClientTest {
 
     @BeforeEach
     void setUp() {
-        RestClient.Builder builder = RestClient.builder().baseUrl("http://conta-service");
+        RestClient.Builder builder = RestClient.builder().baseUrl("http://account-service");
         mockServer = MockRestServiceServer.bindTo(builder).build();
         contaClient = new ContaClient(builder.build());
     }
@@ -33,7 +33,7 @@ class ContaClientTest {
         String corpo = new ObjectMapper().writeValueAsString(
                 new ContaResumo(1L, 1L, "0001-1", "CORRENTE", "ATIVA"));
 
-        mockServer.expect(requestTo("http://conta-service/contas/1"))
+        mockServer.expect(requestTo("http://account-service/contas/1"))
                 .andRespond(withSuccess(corpo, MediaType.APPLICATION_JSON));
 
         ContaResumo resultado = contaClient.buscarConta(1L);
@@ -45,7 +45,7 @@ class ContaClientTest {
 
     @Test
     void buscarConta_deveLancarContaInvalida_quandoRecebe404() {
-        mockServer.expect(requestTo("http://conta-service/contas/999"))
+        mockServer.expect(requestTo("http://account-service/contas/999"))
                 .andRespond(withStatus(NOT_FOUND));
 
         assertThatThrownBy(() -> contaClient.buscarConta(999L))

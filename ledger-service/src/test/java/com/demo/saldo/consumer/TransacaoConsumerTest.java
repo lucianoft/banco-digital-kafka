@@ -7,8 +7,8 @@ import com.demo.saldo.event.TransacaoEvent;
 import com.demo.saldo.event.TransacaoProcessadaEvent;
 import com.demo.saldo.exception.ContaInvalidaException;
 import com.demo.saldo.exception.SaldoInsuficienteException;
+import com.demo.saldo.service.OutboxService;
 import com.demo.saldo.service.SaldoService;
-import com.demo.saldo.service.TransacaoProcessadaPublisher;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -20,24 +20,26 @@ import java.math.BigDecimal;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.never;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class TransacaoConsumerTest {
 
+    private static final String TOPICO_TRANSACOES_PROCESSADAS = "transacoes-processadas";
+
     @Mock
     private SaldoService saldoService;
     @Mock
-    private TransacaoProcessadaPublisher transacaoProcessadaPublisher;
+    private OutboxService outboxService;
 
     private TransacaoConsumer transacaoConsumer;
 
     @BeforeEach
     void setUp() {
-        transacaoConsumer = new TransacaoConsumer(saldoService, transacaoProcessadaPublisher);
+        transacaoConsumer = new TransacaoConsumer(saldoService, outboxService, TOPICO_TRANSACOES_PROCESSADAS);
     }
 
     private static TransacaoEvent evento(String correlationId) {
@@ -45,50 +47,49 @@ class TransacaoConsumerTest {
     }
 
     @Test
-    void consumir_devePublicarSucesso_quandoTransacaoEfetivada() {
+    void consumir_naoDeveTocarNaOutbox_quandoTransacaoEfetivada() {
         TransacaoEvent evt = evento("c1");
         when(saldoService.processar(evt)).thenReturn(Optional.of(new Transacao()));
 
         transacaoConsumer.consumir(evt);
 
-        ArgumentCaptor<TransacaoProcessadaEvent> captor = ArgumentCaptor.forClass(TransacaoProcessadaEvent.class);
-        verify(transacaoProcessadaPublisher).publicar(captor.capture());
-        assertThat(captor.getValue().sucesso()).isTrue();
-        assertThat(captor.getValue().correlationId()).isEqualTo("c1");
+        verifyNoInteractions(outboxService);
     }
 
     @Test
-    void consumir_naoDevePublicar_quandoDuplicata() {
+    void consumir_naoDeveTocarNaOutbox_quandoDuplicata() {
         TransacaoEvent evt = evento("dup");
         when(saldoService.processar(evt)).thenReturn(Optional.empty());
 
         transacaoConsumer.consumir(evt);
 
-        verify(transacaoProcessadaPublisher, never()).publicar(any());
+        verifyNoInteractions(outboxService);
     }
 
     @Test
-    void consumir_devePublicarErro_quandoContaInvalida() {
+    void consumir_deveEnfileirarErro_quandoContaInvalida() {
         TransacaoEvent evt = evento("c2");
         when(saldoService.processar(evt)).thenThrow(new ContaInvalidaException("Conta não está ativa"));
 
         transacaoConsumer.consumir(evt);
 
-        ArgumentCaptor<TransacaoProcessadaEvent> captor = ArgumentCaptor.forClass(TransacaoProcessadaEvent.class);
-        verify(transacaoProcessadaPublisher).publicar(captor.capture());
-        assertThat(captor.getValue().sucesso()).isFalse();
-        assertThat(captor.getValue().motivo()).contains("não está ativa");
+        ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
+        verify(outboxService).enfileirar(eq(TOPICO_TRANSACOES_PROCESSADAS), eq("1"), captor.capture());
+        TransacaoProcessadaEvent processado = (TransacaoProcessadaEvent) captor.getValue();
+        assertThat(processado.sucesso()).isFalse();
+        assertThat(processado.motivo()).contains("não está ativa");
     }
 
     @Test
-    void consumir_devePublicarErro_quandoSaldoInsuficiente() {
+    void consumir_deveEnfileirarErro_quandoSaldoInsuficiente() {
         TransacaoEvent evt = evento("c3");
         when(saldoService.processar(evt)).thenThrow(new SaldoInsuficienteException("Saldo insuficiente na conta 1"));
 
         transacaoConsumer.consumir(evt);
 
-        ArgumentCaptor<TransacaoProcessadaEvent> captor = ArgumentCaptor.forClass(TransacaoProcessadaEvent.class);
-        verify(transacaoProcessadaPublisher).publicar(captor.capture());
-        assertThat(captor.getValue().sucesso()).isFalse();
+        ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
+        verify(outboxService).enfileirar(eq(TOPICO_TRANSACOES_PROCESSADAS), eq("1"), captor.capture());
+        TransacaoProcessadaEvent processado = (TransacaoProcessadaEvent) captor.getValue();
+        assertThat(processado.sucesso()).isFalse();
     }
 }

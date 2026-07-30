@@ -7,14 +7,15 @@ import com.demo.saldo.entity.TipoMovimento;
 import com.demo.saldo.entity.TipoTransacao;
 import com.demo.saldo.entity.Transacao;
 import com.demo.saldo.event.TransacaoEvent;
+import com.demo.saldo.event.TransacaoProcessadaEvent;
 import com.demo.saldo.exception.ContaInvalidaException;
 import com.demo.saldo.exception.SaldoInsuficienteException;
 import com.demo.saldo.repository.SaldoRepository;
 import com.demo.saldo.repository.TransacaoRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -34,6 +35,8 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class SaldoServiceTest {
 
+    private static final String TOPICO_TRANSACOES_PROCESSADAS = "transacoes-processadas";
+
     @Mock
     private SaldoRepository saldoRepository;
     @Mock
@@ -42,9 +45,16 @@ class SaldoServiceTest {
     private ContaClient contaClient;
     @Mock
     private SaldoDiarioService saldoDiarioService;
+    @Mock
+    private OutboxService outboxService;
 
-    @InjectMocks
     private SaldoService saldoService;
+
+    @BeforeEach
+    void setUp() {
+        saldoService = new SaldoService(saldoRepository, transacaoRepository, contaClient, saldoDiarioService,
+                outboxService, TOPICO_TRANSACOES_PROCESSADAS);
+    }
 
     private static Saldo novoSaldo(Long contaId, String valor) {
         Saldo saldo = new Saldo();
@@ -82,6 +92,12 @@ class SaldoServiceTest {
         assertThat(salva.getValor()).isEqualByComparingTo("50.00");
         assertThat(salva.getTipoMovimento()).isEqualTo(TipoMovimento.CREDITO);
         assertThat(salva.getTipoTransacao()).isEqualTo(TipoTransacao.DINHEIRO);
+
+        ArgumentCaptor<Object> eventoCaptor = ArgumentCaptor.forClass(Object.class);
+        verify(outboxService).enfileirar(eq(TOPICO_TRANSACOES_PROCESSADAS), eq("1"), eventoCaptor.capture());
+        TransacaoProcessadaEvent processado = (TransacaoProcessadaEvent) eventoCaptor.getValue();
+        assertThat(processado.correlationId()).isEqualTo("c1");
+        assertThat(processado.sucesso()).isTrue();
     }
 
     @Test
@@ -98,6 +114,7 @@ class SaldoServiceTest {
 
         assertThat(resultado).isPresent();
         assertThat(saldo.getValor()).isEqualByComparingTo("70.00");
+        verify(outboxService).enfileirar(eq(TOPICO_TRANSACOES_PROCESSADAS), eq("1"), any(TransacaoProcessadaEvent.class));
     }
 
     @Test
@@ -109,7 +126,7 @@ class SaldoServiceTest {
         Optional<Transacao> resultado = saldoService.processar(evento);
 
         assertThat(resultado).isEmpty();
-        verifyNoInteractions(contaClient, saldoDiarioService);
+        verifyNoInteractions(contaClient, saldoDiarioService, outboxService);
         verify(transacaoRepository, never()).save(any());
     }
 
@@ -125,6 +142,7 @@ class SaldoServiceTest {
                 .hasMessageContaining("não está ativa");
 
         verify(saldoRepository, never()).findById(any());
+        verifyNoInteractions(outboxService);
     }
 
     @Test
@@ -138,6 +156,8 @@ class SaldoServiceTest {
         assertThatThrownBy(() -> saldoService.processar(evento))
                 .isInstanceOf(ContaInvalidaException.class)
                 .hasMessageContaining("Saldo não encontrado");
+
+        verifyNoInteractions(outboxService);
     }
 
     @Test
@@ -154,6 +174,6 @@ class SaldoServiceTest {
                 .isInstanceOf(SaldoInsuficienteException.class);
 
         verify(transacaoRepository, never()).save(any());
-        verifyNoInteractions(saldoDiarioService);
+        verifyNoInteractions(saldoDiarioService, outboxService);
     }
 }

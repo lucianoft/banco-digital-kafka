@@ -1,7 +1,7 @@
 -- PostgreSQL. Para Oracle (12c+): mesma sintaxe GENERATED ALWAYS AS IDENTITY funciona;
 -- em versões antigas, usar CREATE SEQUENCE + trigger BEFORE INSERT. TIMESTAMP igual nos dois.
 --
--- cliente/conta não moram mais aqui: vivem no conta-service (banco "conta"). As colunas
+-- cliente/conta não moram mais aqui: vivem no account-service (banco "conta"). As colunas
 -- conta_id abaixo são só identificadores externos, sem FK — bancos separados não têm
 -- como referenciar linha de outro banco.
 
@@ -41,6 +41,22 @@ CREATE TABLE saldo_diario (
 );
 CREATE INDEX ix_saldo_diario_conta_id ON saldo_diario(conta_id);
 
+-- Outbox transacional: SaldoService grava aqui, na mesma transação que efetiva o
+-- movimento, o evento a publicar em transacoes-processadas. O envio de fato pro
+-- Kafka é feito à parte pelo OutboxRelay (poll + KafkaTemplate), que só marca
+-- enviado_em depois de confirmação do broker. Fecha a brecha do dual-write: se o
+-- processo cair entre gravar o saldo e publicar, ou os dois foram commitados juntos
+-- (e o relay reenvia), ou nenhum dos dois foi.
+CREATE TABLE outbox_event (
+    id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    topico        VARCHAR(100) NOT NULL,
+    chave         VARCHAR(100) NOT NULL,
+    payload       TEXT         NOT NULL,
+    criado_em     TIMESTAMP    NOT NULL DEFAULT now(),
+    enviado_em    TIMESTAMP
+);
+CREATE INDEX ix_outbox_event_pendente ON outbox_event(id) WHERE enviado_em IS NULL;
+
 -- Dados de exemplo para testar o fluxo via docker-compose — conta_id = 1 é a mesma
--- conta seedada no conta-service (db/schema.sql de lá).
+-- conta seedada no account-service (db/schema.sql de lá).
 INSERT INTO saldo (conta_id, valor) VALUES (1, 1000.00);

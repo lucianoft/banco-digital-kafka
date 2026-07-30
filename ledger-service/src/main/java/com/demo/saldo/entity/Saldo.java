@@ -11,7 +11,7 @@ import lombok.Setter;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
-/** conta_id é só um identificador externo aqui — a conta em si vive no conta-service, em outro banco. */
+/** conta_id é só um identificador externo aqui — a conta em si vive no account-service, em outro banco. */
 @Getter
 @Setter
 @Entity

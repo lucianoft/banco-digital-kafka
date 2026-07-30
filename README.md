@@ -27,7 +27,7 @@ flowchart LR
 
     Cliente -->|"POST /pix"| PIX["pix-service :8081"]
     Cliente -->|"POST /transacoes"| LEDGER["ledger-service :8080"]
-    Cliente -->|"GET /contas/{id}"| CONTA["conta-service :8082"]
+    Cliente -->|"GET /contas/{id}"| CONTA["account-service :8082"]
 
     PIX -->|produz| T[("tópico: transacoes")]
     LEDGER -->|consome| T
@@ -46,13 +46,13 @@ flowchart LR
 
 Cada serviço tem seu próprio banco — não há join nem FK cruzando bases. `ledger-service`
 guarda `conta_id` como um identificador externo simples; quem sabe o que é uma conta de
-verdade é o `conta-service`.
+verdade é o `account-service`.
 
 ## Serviços
 
 | Serviço | Porta | Responsabilidade | Banco | Consome Kafka | Produz Kafka |
 |---|---|---|---|---|---|
-| `conta-service` | 8082 | Cadastro de cliente e conta. Só REST, sem Kafka. | `conta` | — | — |
+| `account-service` | 8082 | Cadastro de cliente e conta. Só REST, sem Kafka. | `conta` | — | — |
 | `ledger-service` | 8080 | Core bancário: efetiva crédito/débito, controla saldo e saldo diário. Não conhece PIX nem nenhum canal específico. | `kafka_saldo` | `transacoes` | `transacoes-processadas` |
 | `pix-service` | 8081 | Canal PIX: recebe a movimentação, produz pro core, escuta o resultado (filtrando só PIX) e simula o envio ao Banco Central. | `pix` | `transacoes-processadas` | `transacoes` |
 
@@ -64,7 +64,7 @@ sequenceDiagram
     participant PIX as pix-service
     participant K as Kafka
     participant L as ledger-service
-    participant CS as conta-service
+    participant CS as account-service
     participant R as Redis
     participant BC as Banco Central (simulado)
 
@@ -130,7 +130,7 @@ nunca cai na DLQ.
 
 Um único container Postgres, três databases lógicos (cada serviço só enxerga o seu):
 
-**`conta`** (conta-service)
+**`conta`** (account-service)
 ```
 cliente (id, nome, documento, status, criado_em)
 conta   (id, cliente_id → cliente, numero_conta, tipo, status, criado_em)
@@ -188,7 +188,7 @@ Zookeeper), um container que cria os tópicos, e os três serviços.
 
 | Serviço | URL |
 |---|---|
-| conta-service | http://localhost:8082 |
+| account-service | http://localhost:8082 |
 | ledger-service | http://localhost:8080 |
 | pix-service | http://localhost:8081 |
 
@@ -199,7 +199,7 @@ docker compose down -v
 
 ## Referência de API
 
-### conta-service
+### account-service
 
 ```bash
 GET /contas/{id}
@@ -244,7 +244,7 @@ A conta de exemplo já vem seedada: `contaId = 1`, saldo inicial `R$ 1.000,00`.
 banco-digital-kafka/
 ├── docker-compose.yml
 ├── db/schema.sql                  # kafka_saldo (ledger-service)
-├── conta-service/
+├── account-service/
 │   ├── db/{schema.sql,init-conta-db.sh}
 │   └── src/main/java/com/demo/conta/
 ├── ledger-service/
@@ -269,10 +269,11 @@ Isto é um projeto de estudo, não um sistema de produção. O que falta pra ser
 - **Banco Central é só um log** — `BancoCentralService` simula latência e sucesso, não
   fala com nenhum sistema externo de verdade.
 - **Sem autenticação/autorização** — todos os endpoints são públicos.
-- **Dual-write entre banco e Kafka** — `TransacaoConsumer` grava no Postgres e só
-  depois publica em `transacoes-processadas`, como dois passos separados. Se o processo
-  cair exatamente entre os dois, a transação foi efetivada mas o evento nunca sai. O
-  jeito correto de fechar essa brecha é outbox transacional.
+- ~~Dual-write entre banco e Kafka~~ — resolvido com outbox transacional: o
+  `SaldoService` grava o evento de confirmação na tabela `outbox_event` na mesma
+  transação que efetiva o saldo, e o `OutboxRelay` (`@Scheduled`) publica de forma
+  assíncrona, só marcando `enviado_em` depois do ack do broker. Se o Kafka cair, o
+  evento fica pendente e é reenviado na próxima varredura — nunca se perde.
 - **Sem idempotência na borda do `pix-service`** — cada `POST /pix` gera um
   `transacaoId` novo; um retry de rede do cliente cria uma segunda transação de
   verdade, não apenas repete a primeira.

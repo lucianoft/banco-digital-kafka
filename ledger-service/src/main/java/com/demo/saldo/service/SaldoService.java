@@ -6,11 +6,13 @@ import com.demo.saldo.entity.Saldo;
 import com.demo.saldo.entity.Transacao;
 import com.demo.saldo.entity.TipoMovimento;
 import com.demo.saldo.event.TransacaoEvent;
+import com.demo.saldo.event.TransacaoProcessadaEvent;
 import com.demo.saldo.exception.ContaInvalidaException;
 import com.demo.saldo.exception.SaldoInsuficienteException;
 import com.demo.saldo.repository.SaldoRepository;
 import com.demo.saldo.repository.TransacaoRepository;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.retry.annotation.Backoff;
 import org.springframework.retry.annotation.Retryable;
@@ -38,20 +40,29 @@ public class SaldoService {
     private final TransacaoRepository transacaoRepository;
     private final ContaClient contaClient;
     private final SaldoDiarioService saldoDiarioService;
+    private final OutboxService outboxService;
+    private final String topicoTransacoesProcessadas;
 
     public SaldoService(SaldoRepository saldoRepository, TransacaoRepository transacaoRepository,
-                         ContaClient contaClient, SaldoDiarioService saldoDiarioService) {
+                         ContaClient contaClient, SaldoDiarioService saldoDiarioService,
+                         OutboxService outboxService,
+                         @Value("${app.kafka.topic-transacoes-processadas}") String topicoTransacoesProcessadas) {
         this.saldoRepository = saldoRepository;
         this.transacaoRepository = transacaoRepository;
         this.contaClient = contaClient;
         this.saldoDiarioService = saldoDiarioService;
+        this.outboxService = outboxService;
+        this.topicoTransacoesProcessadas = topicoTransacoesProcessadas;
     }
 
     /**
      * Efetiva o movimento na hora (crédito ou débito) ou lança uma exceção de negócio
      * (conta inválida / saldo insuficiente) sem persistir nada — quem chama decide o
-     * que fazer com a rejeição (ver TransacaoConsumer, que publica o resultado em
-     * transacoes-processadas). Duplicata de correlationId é ignorada silenciosamente.
+     * que fazer com a rejeição (ver TransacaoConsumer, que enfileira o resultado na
+     * outbox). No caminho de sucesso, o evento de confirmação já é gravado na outbox
+     * aqui dentro, na mesma transação que efetiva o saldo — outbox transacional, pra
+     * não correr o risco de commitar o saldo e nunca publicar o evento. Duplicata de
+     * correlationId é ignorada silenciosamente.
      */
     @Retryable(retryFor = ObjectOptimisticLockingFailureException.class, maxAttempts = 5,
             backoff = @Backoff(delay = 50, multiplier = 2))
@@ -83,6 +94,10 @@ public class SaldoService {
         transacao.setTipoTransacao(evento.tipoTransacao());
         transacao.setCriadoEm(LocalDateTime.now());
         transacaoRepository.save(transacao);
+
+        outboxService.enfileirar(topicoTransacoesProcessadas, evento.contaId().toString(),
+                new TransacaoProcessadaEvent(evento.correlationId(), evento.contaId(), evento.tipoMovimento(),
+                        evento.tipoTransacao(), evento.valor(), true, "Transação efetivada com sucesso"));
 
         return Optional.of(transacao);
     }

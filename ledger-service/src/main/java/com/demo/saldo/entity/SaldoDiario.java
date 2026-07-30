@@ -17,7 +17,7 @@ import java.time.LocalDateTime;
  * Saldo final de cada dia por conta. A linha do dia corrente é sobrescrita a cada
  * transação efetivada — não existe fechamento em lote, o último valor gravado no dia
  * já É o saldo final daquele dia assim que a data vira. conta_id é só um identificador
- * externo: a conta em si vive no conta-service.
+ * externo: a conta em si vive no account-service.
  */
 @Getter
 @Setter

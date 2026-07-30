@@ -1,0 +1,4 @@
+com\demo\conta\controller\ClienteControllerTest.class
+com\demo\conta\controller\ContaControllerTest.class
+com\demo\conta\mapper\ClienteMapperTest.class
+com\demo\conta\mapper\ContaMapperTest.class
