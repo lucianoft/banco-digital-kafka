@@ -42,20 +42,24 @@ CREATE TABLE saldo_diario (
 CREATE INDEX ix_saldo_diario_conta_id ON saldo_diario(conta_id);
 
 -- Outbox transacional: SaldoService grava aqui, na mesma transação que efetiva o
--- movimento, o evento a publicar em transacoes-processadas. O envio de fato pro
--- Kafka é feito à parte pelo OutboxRelay (poll + KafkaTemplate), que só marca
--- enviado_em depois de confirmação do broker. Fecha a brecha do dual-write: se o
--- processo cair entre gravar o saldo e publicar, ou os dois foram commitados juntos
--- (e o relay reenvia), ou nenhum dos dois foi.
+-- movimento, o evento a publicar em transacoes-processadas. Fecha a brecha do
+-- dual-write: se o processo cair entre gravar o saldo e publicar, ou os dois foram
+-- commitados juntos, ou nenhum dos dois foi.
+--
+-- O envio de fato pro Kafka é feito via CDC: o Debezium replica esta tabela (WAL,
+-- replicação lógica) pro tópico "ledger.public.outbox_event", e o
+-- outbox-relay-service consome esse tópico, extrai topico/chave/payload e publica no
+-- tópico de destino — indo pra "<tópico>-dlq" se não conseguir produzir. Não tem
+-- coluna de controle de envio: o replication slot garante que cada INSERT é emitido
+-- pro Debezium exatamente uma vez, não existe "pendente" pra filtrar como no polling
+-- que este approach substituiu.
 CREATE TABLE outbox_event (
     id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     topico        VARCHAR(100) NOT NULL,
     chave         VARCHAR(100) NOT NULL,
     payload       TEXT         NOT NULL,
-    criado_em     TIMESTAMP    NOT NULL DEFAULT now(),
-    enviado_em    TIMESTAMP
+    criado_em     TIMESTAMP    NOT NULL DEFAULT now()
 );
-CREATE INDEX ix_outbox_event_pendente ON outbox_event(id) WHERE enviado_em IS NULL;
 
 -- Dados de exemplo para testar o fluxo via docker-compose — conta_id = 1 é a mesma
 -- conta seedada no account-service (db/schema.sql de lá).

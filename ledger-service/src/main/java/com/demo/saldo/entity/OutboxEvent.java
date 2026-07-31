@@ -13,9 +13,11 @@ import java.time.LocalDateTime;
 
 /**
  * Outbox transacional: linha gravada na mesma transação de banco que efetiva o
- * movimento. O envio pro Kafka é feito à parte pelo OutboxRelay, que só marca
- * enviado_em depois de confirmação do broker — se o processo cair antes disso, a
- * próxima varredura reenvia.
+ * movimento. O envio pro Kafka é feito à parte, via CDC (Debezium lendo o WAL) — o
+ * outbox-relay-service consome o tópico de mudanças e publica no tópico de destino,
+ * indo pra "&lt;tópico&gt;-dlq" se não conseguir produzir. Não existe coluna de controle
+ * de envio: o Debezium emite cada INSERT desta tabela exatamente uma vez (replication
+ * slot), então não há "pendente" pra filtrar.
  */
 @Getter
 @Setter
@@ -38,7 +40,4 @@ public class OutboxEvent {
 
     @Column(name = "criado_em", nullable = false)
     private LocalDateTime criadoEm;
-
-    @Column(name = "enviado_em")
-    private LocalDateTime enviadoEm;
 }

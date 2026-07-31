@@ -1,6 +1,9 @@
 services:
   postgres:
     image: postgres:16-alpine
+    # wal_level=logical é pré-requisito do conector pgoutput do Debezium (replicação
+    # lógica); o pgoutput já vem embutido no Postgres 16, sem precisar de extensão extra.
+    command: ["postgres", "-c", "wal_level=logical"]
     environment:
       POSTGRES_DB: kafka_saldo
       POSTGRES_USER: postgres
@@ -60,6 +63,50 @@ services:
       /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic transacoes-processadas-dlq --partitions 3 --replication-factor 1;
       "
 
+  kafka-connect:
+    image: debezium/connect:2.7
+    container_name: kafka-connect
+    depends_on:
+      kafka:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8083:8083"
+    environment:
+      BOOTSTRAP_SERVERS: kafka:9092
+      GROUP_ID: outbox-connect-cluster
+      CONFIG_STORAGE_TOPIC: outbox-connect-configs
+      OFFSET_STORAGE_TOPIC: outbox-connect-offsets
+      STATUS_STORAGE_TOPIC: outbox-connect-status
+      # obrigatório com um único broker — o Connect tenta criar esses três tópicos
+      # internos com replication-factor 3 por padrão, e não existem 3 brokers aqui.
+      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 1
+
+  # Registra o conector Postgres (via REST API do Connect) que captura a tabela
+  # outbox_event do ledger-service e publica em ledger.public.outbox_event — ver
+  # comentário na tabela outbox_event em db/schema.sql pro fluxo completo.
+  debezium-connector-init:
+    image: curlimages/curl:8.11.0
+    depends_on:
+      kafka-connect:
+        condition: service_started
+    entrypoint: ["/bin/sh", "-c"]
+    # OBS: bloco YAML "folded" (>) — todo line break aqui vira espaço, então cada
+    # "linha" abaixo tem que ser uma instrução completa (sem continuação de linha com
+    # \ no fim, isso quebraria com o folding). Mesmo estilo do command do kafka-init.
+    command: >
+      "
+      until curl -sf http://kafka-connect:8083/connectors > /dev/null; do
+      echo 'aguardando o kafka-connect subir...'; sleep 2;
+      done;
+      curl -sf -X POST http://kafka-connect:8083/connectors
+      -H 'Content-Type: application/json'
+      -d '{ \"name\": \"ledger-outbox-connector\", \"config\": { \"connector.class\": \"io.debezium.connector.postgresql.PostgresConnector\", \"database.hostname\": \"postgres\", \"database.port\": \"5432\", \"database.user\": \"postgres\", \"database.password\": \"postgres\", \"database.dbname\": \"kafka_saldo\", \"topic.prefix\": \"ledger\", \"table.include.list\": \"public.outbox_event\", \"plugin.name\": \"pgoutput\", \"slot.name\": \"ledger_outbox_slot\", \"publication.name\": \"ledger_outbox_publication\", \"publication.autocreate.mode\": \"filtered\", \"transforms\": \"unwrap\", \"transforms.unwrap.type\": \"io.debezium.transforms.ExtractNewRecordState\", \"transforms.unwrap.drop.tombstones\": \"false\", \"transforms.unwrap.delete.handling.mode\": \"none\", \"key.converter\": \"org.apache.kafka.connect.json.JsonConverter\", \"key.converter.schemas.enable\": \"false\", \"value.converter\": \"org.apache.kafka.connect.json.JsonConverter\", \"value.converter.schemas.enable\": \"false\" } }';
+      "
+
   account-service:
     build: ./account-service
     container_name: account-service
@@ -111,6 +158,19 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
     ports:
       - "8081:8081"
+
+  outbox-relay-service:
+    build: ./outbox-relay-service
+    container_name: outbox-relay-service
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      debezium-connector-init:
+        condition: service_completed_successfully
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    ports:
+      - "8084:8084"
 
 volumes:
   pgdata:

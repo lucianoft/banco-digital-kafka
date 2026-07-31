@@ -15,7 +15,9 @@ import java.time.LocalDateTime;
  * existe uma em andamento — é assim que o SaldoService consegue commitar saldo e
  * evento pendente atomicamente — ou abre uma transação própria quando não há
  * nenhuma ativa (caso do TransacaoConsumer publicando uma rejeição depois do
- * rollback do processamento). O envio de fato é responsabilidade do OutboxRelay.
+ * rollback do processamento). O envio de fato é feito via CDC (Debezium replicando a
+ * outbox_event) + outbox-relay-service, que consome a mudança e publica no tópico de
+ * destino.
  */
 @Service
 public class OutboxService {
