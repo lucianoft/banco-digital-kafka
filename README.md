@@ -220,10 +220,6 @@ pix_transacao (id, transacao_id [correlação c/ ledger-service], conta_id, valo
 
 ## Testes
 
-Todos os quatro serviços têm cobertura de 100% de instruções e branches, verificada pelo
-JaCoCo a cada build (`mvn verify`). Exclusões aplicadas em todos os serviços: classe
-`*Application` (main), pacote `config/` e classes geradas pelo MapStruct (`*MapperImpl`).
-
 | Serviço | Testes | Ferramenta principal |
 |---|---|---|
 | `ledger-service` | 29 | WireMock (HTTP) + Mockito |
@@ -280,7 +276,7 @@ Para rodar os testes de um serviço específico:
 
 ```bash
 # requer JAVA_HOME apontando para Java 21
-mvn verify -pl ledger-service
+mvn test -pl ledger-service
 ```
 
 ## Como rodar
@@ -402,4 +398,4 @@ Isto é um projeto de estudo, não um sistema de produção. O que falta pra ser
 Java 21 · Spring Boot 3.4.1 · Spring Kafka · Spring Data JPA · Spring Data Redis ·
 PostgreSQL 16 · Redis 7 · Apache Kafka 3.8 (KRaft) · Debezium 2.7 (Kafka Connect,
 conector Postgres via `pgoutput`) · Lombok · MapStruct · Docker Compose ·
-WireMock 3.5.4 · JaCoCo · JUnit 5 · Mockito · AssertJ
+WireMock 3.5.4 · JUnit 5 · Mockito · AssertJ
