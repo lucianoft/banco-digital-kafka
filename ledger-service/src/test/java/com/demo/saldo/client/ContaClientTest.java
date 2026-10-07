@@ -2,56 +2,76 @@ package com.demo.saldo.client;
 
 import com.demo.saldo.dto.ContaResumo;
 import com.demo.saldo.exception.ContaInvalidaException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.tomakehurst.wiremock.junit5.WireMockRuntimeInfo;
+import com.github.tomakehurst.wiremock.junit5.WireMockTest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.http.MediaType;
-import org.springframework.test.web.client.MockRestServiceServer;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 
+import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.springframework.http.HttpStatus.NOT_FOUND;
-import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
-import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
-import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
+@WireMockTest
 class ContaClientTest {
 
-    private MockRestServiceServer mockServer;
     private ContaClient contaClient;
+    private ContaClient contaClientComTimeout;
 
     @BeforeEach
-    void setUp() {
-        RestClient.Builder builder = RestClient.builder().baseUrl("http://account-service");
-        mockServer = MockRestServiceServer.bindTo(builder).build();
-        contaClient = new ContaClient(builder.build());
+    void setUp(WireMockRuntimeInfo wm) {
+        contaClient = new ContaClient(
+                RestClient.builder().baseUrl(wm.getHttpBaseUrl()).build());
+
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setReadTimeout(200);
+        contaClientComTimeout = new ContaClient(
+                RestClient.builder().baseUrl(wm.getHttpBaseUrl()).requestFactory(factory).build());
     }
 
     @Test
-    void buscarConta_deveRetornarContaResumo_quandoEncontrada() throws Exception {
-        String corpo = new ObjectMapper().writeValueAsString(
-                new ContaResumo(1L, 1L, "0001-1", "CORRENTE", "ATIVA"));
-
-        mockServer.expect(requestTo("http://account-service/contas/1"))
-                .andRespond(withSuccess(corpo, MediaType.APPLICATION_JSON));
+    void buscarConta_deveRetornarContaResumo_quandoEncontrada() {
+        stubFor(get(urlPathEqualTo("/contas/1"))
+                .willReturn(okJson("""
+                        {"id":1,"clienteId":1,"numeroConta":"0001-1","tipo":"CORRENTE","status":"ATIVA"}
+                        """)));
 
         ContaResumo resultado = contaClient.buscarConta(1L);
 
         assertThat(resultado.id()).isEqualTo(1L);
         assertThat(resultado.status()).isEqualTo("ATIVA");
-        mockServer.verify();
+        verify(getRequestedFor(urlPathEqualTo("/contas/1")));
     }
 
     @Test
     void buscarConta_deveLancarContaInvalida_quandoRecebe404() {
-        mockServer.expect(requestTo("http://account-service/contas/999"))
-                .andRespond(withStatus(NOT_FOUND));
+        stubFor(get(urlPathEqualTo("/contas/999"))
+                .willReturn(notFound()));
 
         assertThatThrownBy(() -> contaClient.buscarConta(999L))
                 .isInstanceOf(ContaInvalidaException.class)
                 .hasMessageContaining("999");
 
-        mockServer.verify();
+        verify(getRequestedFor(urlPathEqualTo("/contas/999")));
+    }
+
+    @Test
+    void buscarConta_devePropagar_quandoServidorRetorna500() {
+        stubFor(get(urlPathEqualTo("/contas/2"))
+                .willReturn(serverError()));
+
+        assertThatThrownBy(() -> contaClient.buscarConta(2L))
+                .isInstanceOf(RuntimeException.class);
+    }
+
+    @Test
+    void buscarConta_devePropagar_quandoTimeoutDeRede() {
+        stubFor(get(urlPathEqualTo("/contas/3"))
+                .willReturn(ok().withFixedDelay(500)));
+
+        assertThatThrownBy(() -> contaClientComTimeout.buscarConta(3L))
+                .isInstanceOf(ResourceAccessException.class);
     }
 }

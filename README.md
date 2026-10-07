@@ -15,6 +15,7 @@ Kafka pelo `outbox-relay-service`.
 - [Tópicos Kafka](#tópicos-kafka)
 - [Bancos de dados](#bancos-de-dados)
 - [Padrões usados](#padrões-usados)
+- [Testes](#testes)
 - [Como rodar](#como-rodar)
 - [Referência de API](#referência-de-api)
 - [Estrutura de pastas](#estrutura-de-pastas)
@@ -217,6 +218,71 @@ pix_transacao (id, transacao_id [correlação c/ ledger-service], conta_id, valo
   fica varrendo a tabela em loop, o Postgres empurra a mudança assim que ela é
   commitada.
 
+## Testes
+
+Todos os quatro serviços têm cobertura de 100% de instruções e branches, verificada pelo
+JaCoCo a cada build (`mvn verify`). Exclusões aplicadas em todos os serviços: classe
+`*Application` (main), pacote `config/` e classes geradas pelo MapStruct (`*MapperImpl`).
+
+| Serviço | Testes | Ferramenta principal |
+|---|---|---|
+| `ledger-service` | 29 | WireMock (HTTP) + Mockito |
+| `account-service` | 12 | Mockito |
+| `pix-service` | 15 | Mockito |
+| `outbox-relay-service` | 3 | Mockito |
+
+O `ledger-service` é o único que faz chamadas HTTP síncronas para outro serviço
+(`account-service`), então é o único que usa WireMock. Os demais só precisam de Mockito
+pra isolar dependências.
+
+**WireMock no `ledger-service`**
+
+A dependência é `wiremock-standalone 3.5.4`. A anotação `@WireMockTest` sobe um servidor
+HTTP real em porta dinâmica a cada teste — zero Spring context, zero Testcontainers. Cada
+teste de `ContaClientTest` recebe um `WireMockRuntimeInfo` com a URL base do servidor e
+usa `stubFor()`/`verify()` do WireMock para definir e verificar a interação HTTP:
+
+```java
+@WireMockTest
+class ContaClientTest {
+
+    @BeforeEach
+    void setUp(WireMockRuntimeInfo wm) {
+        contaClient = new ContaClient(
+                RestClient.builder().baseUrl(wm.getHttpBaseUrl()).build());
+    }
+
+    @Test
+    void buscarConta_deveRetornarContaResumo_quandoEncontrada() {
+        stubFor(get(urlPathEqualTo("/contas/1"))
+                .willReturn(okJson("""
+                        {"id":1,"clienteId":1,"numeroConta":"0001-1","tipo":"CORRENTE","status":"ATIVA"}
+                        """)));
+
+        ContaResumo resultado = contaClient.buscarConta(1L);
+
+        assertThat(resultado.status()).isEqualTo("ATIVA");
+        verify(getRequestedFor(urlPathEqualTo("/contas/1")));
+    }
+}
+```
+
+Os cenários cobertos são: resposta 200, 404 (`ContaInvalidaException`), 500 (propagação) e
+timeout de rede (`ResourceAccessException`).
+
+> **Nota sobre a versão do WireMock:** a partir da versão 3.10.0, `wiremock-standalone`
+> migrou o discovery do servidor HTTP para o padrão Java ServiceLoader (SPI), mas
+> esqueceu de empacotar o arquivo `META-INF/services/` no jar. Na 3.5.4 o discovery ainda
+> usa um mecanismo interno próprio, então `@WireMockTest` funciona sem nenhuma
+> configuração extra.
+
+Para rodar os testes de um serviço específico:
+
+```bash
+# requer JAVA_HOME apontando para Java 21
+mvn verify -pl ledger-service
+```
+
 ## Como rodar
 
 Pré-requisitos: Docker e Docker Compose.
@@ -306,8 +372,6 @@ banco-digital-kafka/
 
 Isto é um projeto de estudo, não um sistema de produção. O que falta pra ser "real":
 
-- **Sem testes automatizados** — nem unitário nem de integração, apesar das
-  dependências de teste já estarem nos `pom.xml`. É a maior lacuna real do projeto.
 - **Sem contabilidade em partida dobrada** — `saldo.valor` é uma mutação simples, não
   lançamentos pareados de débito/crédito como um core bancário de verdade.
 - **Sem resolução de chave PIX** — não existe DICT (diretório de chaves do Bacen);
@@ -337,4 +401,5 @@ Isto é um projeto de estudo, não um sistema de produção. O que falta pra ser
 
 Java 21 · Spring Boot 3.4.1 · Spring Kafka · Spring Data JPA · Spring Data Redis ·
 PostgreSQL 16 · Redis 7 · Apache Kafka 3.8 (KRaft) · Debezium 2.7 (Kafka Connect,
-conector Postgres via `pgoutput`) · Lombok · MapStruct · Docker Compose
+conector Postgres via `pgoutput`) · Lombok · MapStruct · Docker Compose ·
+WireMock 3.5.4 · JaCoCo · JUnit 5 · Mockito · AssertJ

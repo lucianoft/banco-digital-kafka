@@ -2,6 +2,7 @@ package com.demo.pix.service;
 
 import com.demo.pix.event.TransacaoProcessadaEvent;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 /**
@@ -14,6 +15,12 @@ import org.springframework.stereotype.Service;
 @Service
 public class BancoCentralService {
 
+    private final long latenciaMs;
+
+    public BancoCentralService(@Value("${app.bacen.latencia-ms:1500}") long latenciaMs) {
+        this.latenciaMs = latenciaMs;
+    }
+
     public void enviar(TransacaoProcessadaEvent evento) {
         log.info("Enviando transação {} (conta {}, valor {}) para o Banco Central (SPI)...",
                 evento.correlationId(), evento.contaId(), evento.valor());
@@ -23,7 +30,7 @@ public class BancoCentralService {
 
     private void simularLatencia() {
         try {
-            Thread.sleep(1500);
+            Thread.sleep(latenciaMs);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }

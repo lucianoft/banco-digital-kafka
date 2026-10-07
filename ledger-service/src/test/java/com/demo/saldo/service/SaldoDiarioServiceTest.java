@@ -46,6 +46,13 @@ class SaldoDiarioServiceTest {
     }
 
     @Test
+    void existePorId_deveDelegarParaRepository() {
+        when(saldoDiarioRepository.existsById(1L)).thenReturn(true);
+
+        assertThat(saldoDiarioService.existePorId(1L)).isTrue();
+    }
+
+    @Test
     void registrar_deveAtualizarValor_quandoJaExisteRegistroDoDia() {
         LocalDate hoje = LocalDate.now();
         SaldoDiario existente = new SaldoDiario();
